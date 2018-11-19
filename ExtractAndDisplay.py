@@ -19,7 +19,8 @@ def extractFrames(fileName, outputBuffer):
     print("Reading frame {} {} ".format(count, success))
     while success:
         # get a jpg encoded frame
-        success, jpgImage = cv2.imencode('.jpg', image)
+        grayscaleFrame = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+        success, jpgImage = cv2.imencode('.jpg', grayscaleFrame)
 
         #encode the frame as base 64 to make debugging easier
         jpgAsText = base64.b64encode(jpgImage)
