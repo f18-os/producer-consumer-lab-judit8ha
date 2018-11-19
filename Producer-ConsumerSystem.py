@@ -11,18 +11,16 @@ import cv2, queue, os
 outputDir    = 'frames'
 clipFileName = 'clip.mp4'
 
-# initialize frame count
-count = 0
 # shared queue
-extractionQueue = queue.Queue(10)
-displayingQueue = queue.Queue(10)
+extractionQueue = queue.Queue()
+displayingQueue = queue.Queue()
 display = threading.Semaphore()
 extract = threading.Semaphore()
 
 def extractFrames(fileName):
     # Initialize frame count
-    global count, extractionQueue
-
+    #extractionQueue
+    count = 0
     # open video file
     vidcap = cv2.VideoCapture(fileName)
 
@@ -30,8 +28,8 @@ def extractFrames(fileName):
     success, image = vidcap.read()
 
     print("Reading frame {} {} ".format(count, success))
-    while True:
-        extract.acquire()
+    while success:
+        #extract.acquire()
         # get a jpg encoded frame
         success, jpgImage = cv2.imencode('.jpg', image)
         # encode the frame as base 64 to make debugging easier
@@ -41,87 +39,62 @@ def extractFrames(fileName):
         success, image = vidcap.read()
         print('Reading frame {} {}'.format(count, success))
         count += 1
-        extract.release()
-
-
-
+    print("done extracting!")
 
 
 def toGrayscale():
     print("changing to grayscale")
-    # globals
-    global outputDir, count, extractionQueue, displayingQueue
-
-    frame = cv2.imread(base64.b64decode(extractionQueue.get()))
-    # get the next frame file name
-    #inFileName = frame.format(outputDir, count)
-    # load the next file
-    inputFrame = cv2.imread(frame, cv2.IMREAD_COLOR)
-
-    while True:
-        print("Converting frame {}".format(count))
-        # convert the image to grayscale
-        grayscaleFrame = cv2.cvtColor(inputFrame, cv2.COLOR_BGR2GRAY)
-        jpgToText = base64.b64encode(grayscaleFrame)
-        displayingQueue.put(jpgToText)
-
-        # generate output file name
-        #outFileName = "{}/grayscale_{:04d}.jpg".format(outputDir, count)
-        # write output file
-        #cv2.imwrite(outFileName, grayscaleFrame)
-        frame = cv2.imread(base64.b64decode(extractionQueue.get()))
-        # generate input file name for the next frame
-        inFileName = "{}/frame_{:04d}.jpg".format(outputDir, count)
-        # load the next frame
-        inputFrame = cv2.imread(inFileName, cv2.IMREAD_COLOR)
+    frameEncod = extractionQueue.get()
+    extract.release()
+    #extract and decode
+    frameRaw = base64.b64decode(frameEncod)
+    #change to jpeg raw array
+    frameJPG = np.asarray(bytearray(frameRaw), dtype=np.uint8)
+    #decode to jpeg image
+    grayscaleFrame = cv2.imdecode(frameJPG, cv2.COLOR_BGR2GRAY)
+    # encode to jpeg format
+    retvalue, jpgBW = cv2.imencode('.jpg', grayscaleFrame)
+    # encode to base 64
+    jpgToText = base64.b64encode(jpgBW)
+    # add to display queue
+    display.acquire()
+    displayingQueue.put(jpgToText)
+    print("finished changing to grayscale")
 
 
 def displayFrames():
-    print("displaying")
     # globals
-    global outputDir, displayingQueue
+    #global outputDir, displayingQueue
+    count = 0
 
     frameDelay = 42  # the answer to everything
 
-    startTime = time.time()
+    while not displayingQueue.empty():
+        # get the next frame
+        display.release()
+        frameAsText = displayingQueue.get()
 
-    # Generate the filename for the first frame
-    frameFileName = "{}/grayscale_{:04d}.jpg".format(outputDir, count)
+        # decode the frame
+        jpgRawImage = base64.b64decode(frameAsText)
 
-    # load the frame
-    frame = cv2.imread(base64.b64decode(displayingQueue.get()))
-    #frame = cv2.imread(frameFileName)
+        # convert the raw frame to a numpy array
+        jpgImage = np.asarray(bytearray(jpgRawImage), dtype=np.uint8)
 
-    while True:
+        # get a jpg encoded frame
+        img = cv2.imdecode(jpgImage, cv2.IMREAD_UNCHANGED)
 
         print("Displaying frame {}".format(count))
-        # Display the frame in a window called "Video"
-        cv2.imshow("Video", frame)
 
-        # compute the amount of time that has elapsed
-        # while the frame was processed
-        elapsedTime = int((time.time() - startTime) * 1000)
-        print("Time to process frame {} ms".format(elapsedTime))
-
-        # determine the amount of time to wait, also
-        # make sure we don't go into negative time
-        timeToWait = max(1, frameDelay - elapsedTime)
-
-        # Wait for 42 ms and check if the user wants to quit
-        if cv2.waitKey(timeToWait) and 0xFF == ord("q"):
+        # display the image in a window called "video" and wait 42ms
+        # before displaying the next frame
+        cv2.imshow("Video", img)
+        if cv2.waitKey(42) and 0xFF == ord("q"):
             break
 
-            # get the start time for processing the next frame
-        startTime = time.time()
+        count += 1
 
-        # get the next frame filename
-        #count += 1
-        #frameFileName = "{}/grayscale_{:04d}.jpg".format(outputDir, count)
-
-        # Read the next frame file
-        #frame = cv2.imread(frameFileName)
-
-    # make sure we cleanup the windows, otherwise we might end up with a mess
+    print("Finished displaying all frames")
+    # cleanup the windows
     cv2.destroyAllWindows()
 
 
