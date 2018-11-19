@@ -4,7 +4,7 @@ import base64
 import time
 import numpy as np
 import threading
-import cv2, lock, queue, os
+import cv2, queue, os
 
 
 # globals
@@ -17,14 +17,9 @@ count = 0
 extractionQueue = queue.Queue(10)
 displayingQueue = queue.Queue(10)
 
-extracting = threading.Semaphore()
-reading = threading.Semaphore()
-converting = threading.Semaphore()
-displaying = threading.Semaphore()
-
-def extractFrames(fileName, outputBuffer):
+def extractFrames(fileName):
     # Initialize frame count
-    global count, buffFill
+    global count, extractionQueue
 
     # open video file
     vidcap = cv2.VideoCapture(fileName)
@@ -34,58 +29,49 @@ def extractFrames(fileName, outputBuffer):
 
     print("Reading frame {} {} ".format(count, success))
     while True:
-        #extracting.acquire()
         # get a jpg encoded frame
         success, jpgImage = cv2.imencode('.jpg', image)
         # encode the frame as base 64 to make debugging easier
         jpgAsText = base64.b64encode(jpgImage)
         # add the frame to the buffer
-        outputBuffer.put(jpgAsText)
+        extractionQueue.put(jpgAsText)
         success, image = vidcap.read()
         print('Reading frame {} {}'.format(count, success))
+        count += 1
 
-    extracting.release()
 
 
-def toGrayscale(outputBuffer, displayBuffer):
-    reading.acquire()
+def toGrayscale():
     # globals
-    global outputDir, count
+    global outputDir, count, extractionQueue, displayingQueue
 
-    # initialize frame count
-    #count = 0
-    frame = cv2.imread(base64.b64decode(outputBuffer.get()))
+    frame = cv2.imread(base64.b64decode(extractionQueue.get()))
     # get the next frame file name
-    #inFileName = frame.format(outputDir, count)
-
+    inFileName = frame.format(outputDir, count)
     # load the next file
-    #inputFrame = cv2.imread(inFileName, cv2.IMREAD_COLOR)
-    #reading.release()
-    while True:
-        converting.acquire()
-        print("Converting frame {}".format(count))
+    inputFrame = cv2.imread(inFileName, cv2.IMREAD_COLOR)
 
+    while True:
+        print("Converting frame {}".format(count))
         # convert the image to grayscale
         grayscaleFrame = cv2.cvtColor(inputFrame, cv2.COLOR_BGR2GRAY)
         jpgAsText = base64.b64encode(grayscaleFrame)
-        outputBuffer.put(jpgAsText)
+        displayingQueue.put(jpgAsText)
 
         # generate output file name
         #outFileName = "{}/grayscale_{:04d}.jpg".format(outputDir, count)
-
         # write output file
         #cv2.imwrite(outFileName, grayscaleFrame)
         frame = cv2.imread(base64.b64decode(outputBuffer.get()))
         # generate input file name for the next frame
         inFileName = "{}/frame_{:04d}.jpg".format(outputDir, count)
-
         # load the next frame
         inputFrame = cv2.imread(inFileName, cv2.IMREAD_COLOR)
 
 
-def displayFrames(inputBuffer):
+def displayFrames():
     # globals
-    global outputDir
+    global outputDir, displayingQueue
 
     frameDelay = 42  # the answer to everything
 
@@ -95,7 +81,8 @@ def displayFrames(inputBuffer):
     frameFileName = "{}/grayscale_{:04d}.jpg".format(outputDir, count)
 
     # load the frame
-    frame = cv2.imread(frameFileName)
+    frame = cv2.imread(base64.b64decode(displayingQueue.get()))
+    #frame = cv2.imread(frameFileName)
 
     while True:
 
@@ -120,11 +107,11 @@ def displayFrames(inputBuffer):
         startTime = time.time()
 
         # get the next frame filename
-        count += 1
-        frameFileName = "{}/grayscale_{:04d}.jpg".format(outputDir, count)
+        #count += 1
+        #frameFileName = "{}/grayscale_{:04d}.jpg".format(outputDir, count)
 
         # Read the next frame file
-        frame = cv2.imread(frameFileName)
+        #frame = cv2.imread(frameFileName)
 
     # make sure we cleanup the windows, otherwise we might end up with a mess
     cv2.destroyAllWindows()
@@ -133,11 +120,11 @@ def displayFrames(inputBuffer):
 # FORM A RENDERING PIPELINE USING MULTIPLE THREADS
 
 #THREAD1 -> Read frames from a file
-reading_thread = threading.Thread(target=extractFrames, args=(clipFileName, extractionQueue))
+reading_thread = threading.Thread(target=extractFrames, args=[clipFileName])
 #THREAD2 -> Convert frames from thread1 to grayscale
-grayscale_thread = threading.Thread(target=toGrayscale, args=extractionQueue)
+grayscale_thread = threading.Thread(target=toGrayscale)
 #THREAD3 -> Display frames from thread2
-display_thread = threading.Thread(target=displayFrames, args=displayingQueue)
+display_thread = threading.Thread(target=displayFrames)
 
 reading_thread.start()
 grayscale_thread.start()
