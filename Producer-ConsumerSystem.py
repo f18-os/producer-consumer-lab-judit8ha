@@ -1,70 +1,146 @@
+#!/usr/bin/env python3
 
-"""
-Solving producer-consumer problem using semaphores
-"""
-
+import base64
+import time
+import numpy as np
 import threading
-from ExtractAndDisplay import *
-from DisplayFrames import *
+import cv2, lock, queue, os
 
 
-filename = "clip.mp4"
+# globals
+outputDir    = 'frames'
+clipFileName = 'clip.mp4'
+
+# initialize frame count
+count = 0
 # shared queue
-extractionQueue = queue.Queue()
-# Buffer size
-N = 10
-# Buffer init
-buf = [0] * N
+extractionQueue = queue.Queue(10)
+displayingQueue = queue.Queue(10)
 
+extracting = threading.Semaphore()
+reading = threading.Semaphore()
+converting = threading.Semaphore()
+displaying = threading.Semaphore()
 
-fill_count = threading.Semaphore(0)
-empty_count = threading.Semaphore(N)
+def extractFrames(fileName, outputBuffer):
+    # Initialize frame count
+    global count, buffFill
 
+    # open video file
+    vidcap = cv2.VideoCapture(fileName)
 
-def produce():
-    print("One item produced!")
-    return 1
+    # read first image
+    success, image = vidcap.read()
 
-
-def producer():
-    front = 0
+    print("Reading frame {} {} ".format(count, success))
     while True:
-        x = produce()
-        empty_count.acquire()
-        buf[front] = x
-        fill_count.release()
-        front = (front + 1) % N
+        #extracting.acquire()
+        # get a jpg encoded frame
+        success, jpgImage = cv2.imencode('.jpg', image)
+        # encode the frame as base 64 to make debugging easier
+        jpgAsText = base64.b64encode(jpgImage)
+        # add the frame to the buffer
+        outputBuffer.put(jpgAsText)
+        success, image = vidcap.read()
+        print('Reading frame {} {}'.format(count, success))
+
+    extracting.release()
 
 
-def consume(y):
-    print("One item consumed!")
+def toGrayscale(outputBuffer, displayBuffer):
+    reading.acquire()
+    # globals
+    global outputDir, count
 
+    # initialize frame count
+    #count = 0
+    frame = cv2.imread(base64.b64decode(outputBuffer.get()))
+    # get the next frame file name
+    #inFileName = frame.format(outputDir, count)
 
-def consumer():
-    rear = 0
+    # load the next file
+    #inputFrame = cv2.imread(inFileName, cv2.IMREAD_COLOR)
+    #reading.release()
     while True:
-        fill_count.acquire()
-        y = buf[rear]
-        empty_count.release()
-        consume(y)
-        rear = (rear + 1) % N
+        converting.acquire()
+        print("Converting frame {}".format(count))
 
-# produce a thread
-producer_thread = threading.Thread(target=producer)
-consumer_thread = threading.Thread(target=consumer)
+        # convert the image to grayscale
+        grayscaleFrame = cv2.cvtColor(inputFrame, cv2.COLOR_BGR2GRAY)
+        jpgAsText = base64.b64encode(grayscaleFrame)
+        outputBuffer.put(jpgAsText)
 
-producer_thread.start()
-consumer_thread.start()
+        # generate output file name
+        #outFileName = "{}/grayscale_{:04d}.jpg".format(outputDir, count)
+
+        # write output file
+        #cv2.imwrite(outFileName, grayscaleFrame)
+        frame = cv2.imread(base64.b64decode(outputBuffer.get()))
+        # generate input file name for the next frame
+        inFileName = "{}/frame_{:04d}.jpg".format(outputDir, count)
+
+        # load the next frame
+        inputFrame = cv2.imread(inFileName, cv2.IMREAD_COLOR)
+
+
+def displayFrames(inputBuffer):
+    # globals
+    global outputDir
+
+    frameDelay = 42  # the answer to everything
+
+    startTime = time.time()
+
+    # Generate the filename for the first frame
+    frameFileName = "{}/grayscale_{:04d}.jpg".format(outputDir, count)
+
+    # load the frame
+    frame = cv2.imread(frameFileName)
+
+    while True:
+
+        print("Displaying frame {}".format(count))
+        # Display the frame in a window called "Video"
+        cv2.imshow("Video", frame)
+
+        # compute the amount of time that has elapsed
+        # while the frame was processed
+        elapsedTime = int((time.time() - startTime) * 1000)
+        print("Time to process frame {} ms".format(elapsedTime))
+
+        # determine the amount of time to wait, also
+        # make sure we don't go into negative time
+        timeToWait = max(1, frameDelay - elapsedTime)
+
+        # Wait for 42 ms and check if the user wants to quit
+        if cv2.waitKey(timeToWait) and 0xFF == ord("q"):
+            break
+
+            # get the start time for processing the next frame
+        startTime = time.time()
+
+        # get the next frame filename
+        count += 1
+        frameFileName = "{}/grayscale_{:04d}.jpg".format(outputDir, count)
+
+        # Read the next frame file
+        frame = cv2.imread(frameFileName)
+
+    # make sure we cleanup the windows, otherwise we might end up with a mess
+    cv2.destroyAllWindows()
+
 
 # FORM A RENDERING PIPELINE USING MULTIPLE THREADS
 
 #THREAD1 -> Read frames from a file
-
-
-
-
+reading_thread = threading.Thread(target=extractFrames, args=(clipFileName, extractionQueue))
 #THREAD2 -> Convert frames from thread1 to grayscale
+grayscale_thread = threading.Thread(target=toGrayscale, args=extractionQueue)
 #THREAD3 -> Display frames from thread2
-#RUN THREADS CONCURRENTLY
+display_thread = threading.Thread(target=displayFrames, args=displayingQueue)
+
+reading_thread.start()
+grayscale_thread.start()
+display_thread.start()
 
 

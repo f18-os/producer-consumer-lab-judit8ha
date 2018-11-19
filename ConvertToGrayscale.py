@@ -34,5 +34,3 @@ while inputFrame is not None:
     # load the next frame
     inputFrame = cv2.imread(inFileName, cv2.IMREAD_COLOR)
 
-    
-    
