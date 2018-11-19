@@ -16,6 +16,8 @@ count = 0
 # shared queue
 extractionQueue = queue.Queue(10)
 displayingQueue = queue.Queue(10)
+display = threading.Semaphore()
+extract = threading.Semaphore()
 
 def extractFrames(fileName):
     # Initialize frame count
@@ -29,6 +31,7 @@ def extractFrames(fileName):
 
     print("Reading frame {} {} ".format(count, success))
     while True:
+        extract.acquire()
         # get a jpg encoded frame
         success, jpgImage = cv2.imencode('.jpg', image)
         # encode the frame as base 64 to make debugging easier
@@ -38,31 +41,35 @@ def extractFrames(fileName):
         success, image = vidcap.read()
         print('Reading frame {} {}'.format(count, success))
         count += 1
+        extract.release()
+
+
 
 
 
 def toGrayscale():
+    print("changing to grayscale")
     # globals
     global outputDir, count, extractionQueue, displayingQueue
 
     frame = cv2.imread(base64.b64decode(extractionQueue.get()))
     # get the next frame file name
-    inFileName = frame.format(outputDir, count)
+    #inFileName = frame.format(outputDir, count)
     # load the next file
-    inputFrame = cv2.imread(inFileName, cv2.IMREAD_COLOR)
+    inputFrame = cv2.imread(frame, cv2.IMREAD_COLOR)
 
     while True:
         print("Converting frame {}".format(count))
         # convert the image to grayscale
         grayscaleFrame = cv2.cvtColor(inputFrame, cv2.COLOR_BGR2GRAY)
-        jpgAsText = base64.b64encode(grayscaleFrame)
-        displayingQueue.put(jpgAsText)
+        jpgToText = base64.b64encode(grayscaleFrame)
+        displayingQueue.put(jpgToText)
 
         # generate output file name
         #outFileName = "{}/grayscale_{:04d}.jpg".format(outputDir, count)
         # write output file
         #cv2.imwrite(outFileName, grayscaleFrame)
-        frame = cv2.imread(base64.b64decode(outputBuffer.get()))
+        frame = cv2.imread(base64.b64decode(extractionQueue.get()))
         # generate input file name for the next frame
         inFileName = "{}/frame_{:04d}.jpg".format(outputDir, count)
         # load the next frame
@@ -70,6 +77,7 @@ def toGrayscale():
 
 
 def displayFrames():
+    print("displaying")
     # globals
     global outputDir, displayingQueue
 
