@@ -11,8 +11,11 @@ import cv2, queue, os
 # globals
 N = 10
 clipFileName = 'clip.mp4'
-extractionQueue = queue.Queue()
-displayingQueue = queue.Queue()
+extractionQueue = [10]
+displayingQueue = [10]
+lock = 0;
+
+eBuffFull = threading.Semaphore()
 
 
 def extractFrames(fileName,iBuffer):
@@ -23,17 +26,22 @@ def extractFrames(fileName,iBuffer):
     vidcap = cv2.VideoCapture(fileName)
 
     # read first image
-    success, image = vidcap.read()
+    #success, image = vidcap.read()
 
     print("Reading frame {} {} ".format(count, success))
 
-    while success:
+    while True:
+        if(iBuffer.isFull()):
+            eBuffFull.acquire()
+
+
+        success, image = vidcap.read()
         success, jpgImage = cv2.imencode('.jpg', image)
         # encode the frame as base 64 to make debugging easier
-        jpgAsText = base64.b64encode(jpgImage)
+        #jpgAsText = base64.b64encode(jpgImage)
         # add the frame to the buffer
-        iBuffer.put(jpgAsText)
-        success, image = vidcap.read()
+        iBuffer.put(jpgImage)
+        #success, image = vidcap.read()
         print('Reading frame {} {}'.format(count, success))
         count += 1
     print("done extracting!")
@@ -47,7 +55,7 @@ def toGrayscale(iBuffer, oBuffer):
         #print(frameEncod)
         #extract.release()
         #extract and decode
-        frameRaw = base64.b64decode(frameEncod)
+        #frameRaw = base64.b64decode(frameEncod)
         #change to jpeg raw array
         frameJPG = np.asarray(bytearray(frameRaw), dtype=np.uint8)
         #decode to jpeg imageqq
@@ -71,7 +79,7 @@ def displayFrames(oBuffer):
     # display.release()
     frameAsText = oBuffer.get()
     # decode the frame
-    jpgRawImage = base64.b64decode(frameAsText)
+    #jpgRawImage = base64.b64decode(frameAsText)
     # convert the raw frame to a numpy array
     jpgImage = np.asarray(bytearray(jpgRawImage), dtype=np.uint8)
     # get a jpg encoded frame
