@@ -84,7 +84,6 @@ class Process:
             cv2.imshow('Video', frame)
             # Display the frame in a window called "Video"
             print("Displaying frame {}".format(dcount))
-            dcount += 1
             # delay beginning of next frame display
             delay_s = nextFrameStart - time.time()
             nextFrameStart += frameInterval_s
@@ -93,6 +92,12 @@ class Process:
 
             if cv2.waitKey(delay_ms) and 0xFF == ord("q"):
                 break
+
+            dcount += 1
+
+            if self.complete and self.totalFrames == dcount:
+                break
+
         print("finished displaying all frames!")
         cv2.destroyAllWindows()
 
