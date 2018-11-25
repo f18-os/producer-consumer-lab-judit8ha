@@ -66,7 +66,7 @@ class Process:
             #print msg
             print("Grayscaling frame {}".format(gcount))
             gcount += 1
-            if totalFrames == 739:
+            if self.complete and self.totalFrames == gcount:
                 break
 
         print("Finished Changing to Grayscale!")
@@ -95,7 +95,6 @@ class Process:
                 break
         print("finished displaying all frames!")
         cv2.destroyAllWindows()
-
 
     def run(self):
         extracting = threading.Thread(target=self.extract)
