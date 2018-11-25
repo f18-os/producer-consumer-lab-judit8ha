@@ -73,14 +73,14 @@ class Process:
 
     def display(self):
         dcount = 0
-        while not None:
-            print("about to display")
+        while True:
             self.semTakeGray.acquire()
             frame = self.outBuffer.get()
             self.semFillGray.release()
 
             frameInterval_s = 0.042
             nextFrameStart = time.time()
+            cv2.imshow('Video', frame)
             # Display the frame in a window called "Video"
             print("Displaying frame {}".format(dcount))
             dcount += 1
@@ -90,7 +90,7 @@ class Process:
             delay_ms = int(max(1, 1000 * delay_s))
             print("delay + %d ms" % delay_s)
 
-            cv2.imshow('Video', frame)
+
 
             if cv2.waitKey(delay_ms) and 0xFF == ord("q"):
                 break
