@@ -56,6 +56,7 @@ class Process:
             self.semFill.release()
             # change image to grayScale
             grayScaleFrame = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+
             #-1 to gray take semaphore if negative queue is full. wait
             self.semFillGray.acquire()
             #add grayscaled frame to outBuffer
@@ -65,7 +66,7 @@ class Process:
             #print msg
             print("Grayscaling frame {}".format(gcount))
             gcount += 1
-            if self.complete and self.totalFrames == gcount:
+            if totalFrames == 739:
                 break
 
         print("Finished Changing to Grayscale!")
@@ -90,12 +91,11 @@ class Process:
             delay_ms = int(max(1, 1000 * delay_s))
             print("delay + %d ms" % delay_s)
 
-
-
             if cv2.waitKey(delay_ms) and 0xFF == ord("q"):
                 break
         print("finished displaying all frames!")
         cv2.destroyAllWindows()
+
 
     def run(self):
         extracting = threading.Thread(target=self.extract)
