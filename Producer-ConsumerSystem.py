@@ -1,142 +1,160 @@
 #!/usr/bin/env python3
 
-import base64
-import random
-import time
-import numpy as np
+import os
 import threading
-import cv2, queue, os
+import cv2
+import numpy as np
+import base64
+import queue
+import time
+
+# filename of clip to load
+filename = 'clip.mp4'
+
+# shared queues
+extractionQueue = queue.Queue()
+conversionQueue = queue.Queue()
+
+gets = threading.Semaphore(0)
+puts = threading.Semaphore(10)
+
+gets2 = threading.Semaphore(0)
+puts2 = threading.Semaphore(10)
 
 
-# globals
-N = 10
-clipFileName = 'clip.mp4'
-extractionQueue = queue.Queue(10)
-displayingQueue = queue.Queue(10)
-
-eBuffFull = threading.Semaphore(10)
-eBuffEmpty = threading.Semaphore(0)
-
-
-def extractFrames(fileName,iBuffer):
+def extractFrames(fileName, outputBuffer):
     # Initialize frame count
-    #extractionQueue
     count = 0
+
     # open video file
     vidcap = cv2.VideoCapture(fileName)
+
     # read first image
-    #success, image = vidcap.read()
-    print("Reading frame {} {} ".format(count, True))
+    success, image = vidcap.read()
 
-    while True:
-        eBuffFull.acquire()
-        success, image = vidcap.read()
+    print("Reading frame {} {} ".format(count, success))
+
+    while success:
+        # get a jpg encoded frame
         success, jpgImage = cv2.imencode('.jpg', image)
-        # encode the frame as base 64 to make debugging easier
-        #jpgAsText = base64.b64encode(jpgImage)
-        # add the frame to the buffer
-        iBuffer.put(jpgImage)
 
-        #success, image = vidcap.read()
+        # encode the frame as base 64 to make debugging easier
+        jpgAsText = base64.b64encode(jpgImage)
+
+        # add the frame to the buffer
+        puts.acquire()
+        outputBuffer.put(jpgAsText)
+        gets.release()
+
+        success, image = vidcap.read()
         print('Reading frame {} {}'.format(count, success))
         count += 1
-        eBuffEmpty.release()
-    print("done extracting!")
+
+    print("Frame extraction complete")
 
 
-
-def toGrayscale(iBuffer, oBuffer):
-    while True:
-        print("changing to grayscale")
-        eBuffEmpty.acquire()
-        frameEncod = iBuffer.get()
-        eBuffFull.release()
-
-        #print(frameEncod)
-        #extract.release()
-        #extract and decode
-        #frameRaw = base64.b64decode(frameEncod)
-        #change to jpeg raw array
-        frameJPG = np.asarray(bytearray(frameRaw), dtype=np.uint8)
-        #decode to jpeg imageqq
-        img = cv2.imdecode(frameJPG, cv2.IMREAD_UNCHANGED)
-        grayscaleFrame = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-        # encode to jpeg format
-        retvalue, jpgBW = cv2.imencode('.jpg', grayscaleFrame)
-        # encode to base 64
-        jpgToText = base64.b64encode(jpgBW)
-        # add to display queue
-        #display.acquire()
-        oBuffer.put(jpgToText)
-    print("finished changing to grayscale")
-    grayFinished = True
-
-
-
-def displayFrames(oBuffer):
+def displayFrames(inputBuffer):
+    # initialize frame count
     count = 0
-    frameDelay = 42  # the answer to everything
-    # display.release()
-    img = oBuffer.get()
-    # decode the frame
-    #jpgRawImage = base64.b64decode(frameAsText)
-    # convert the raw frame to a numpy array
-    #jpgImage = np.asarray(bytearray(jpgRawImage), dtype=np.uint8)
-    # get a jpg encoded frame
-    frame = cv2.imdecode(img, cv2.IMREAD_UNCHANGED)
-    cv2.imshow("Video", frame)
-    while True:
-        frameInterval_s = 0.042  # inter-frame interval, in seconds
 
+    # go through each frame in the buffer until the buffer is empty
+    while True:
+        # while not inputBuffer.empty():
+        # get the next frame
+        gets2.acquire()
+        frameAsText = inputBuffer.get()
+        puts2.release()
+
+        # decode the frame
+        jpgRawImage = base64.b64decode(frameAsText)
+
+        # convert the raw frame to a numpy array
+        jpgImage = np.asarray(bytearray(jpgRawImage), dtype=np.uint8)
+
+        # get a jpg encoded frame
+        img = cv2.imdecode(jpgImage, cv2.IMREAD_UNCHANGED)
+        frameInterval_s = 0.042
         nextFrameStart = time.time()
 
-        while frame is not None:
-            print("Displaying frame {}".format(count))
+        print("Displaying frame {}".format(count))
 
-            # Display the frame in a window called "Video"
-            cv2.imshow("Video", frame)
+        # display the image in a window called "video" and wait 42ms
+        # before displaying the next frame
+        cv2.imshow("Video", img)
 
-            # get the next frame filename
-            count += 1
-            frameFileName = "grayscale_{:04d}.jpg".format(count)
+        # delay beginning of next frame display
+        delay_s = nextFrameStart - time.time()
+        nextFrameStart += frameInterval_s
+        delay_ms = int(max(1, 1000 * delay_s))
+        print("delay + %d ms" % delay_s)
 
-            # Read the next frame file
-            frame = cv2.imread(frameFileName)
+        # if cv2.waitKey(42) and 0xFF == ord("q"):
+        #    break
+        if cv2.waitKey(delay_ms) and 0xFF == ord("q"):
+            break
 
-            # delay beginning of next frame display
-            delay_s = nextFrameStart - time.time()
-            nextFrameStart += frameInterval_s
-            delay_ms = int(max(1, 1000 * delay_s))
-            print("delay = %d ms" % delay_ms)
-            if cv2.waitKey(delay_ms) and 0xFF == ord("q"):
-                break
+        count += 1
+
+        if count >= 738:
+            break
 
     print("Finished displaying all frames")
-    # cleanup the windows
     cv2.destroyAllWindows()
+    return
 
 
-# FORM A RENDERING PIPELINE USING MULTIPLE THREADS
+# Method for converting the frames to gray scale
+def grayScale(inputBuffer, outputBuffer):
+    # initialize frame count
+    count = 0
 
-#THREAD1 -> Read frames from a file
-reading_thread = threading.Thread(target=extractFrames, args=[clipFileName, extractionQueue])
-#reading_thread.setDaemon(True)
-reading_thread.start()
-#THREAD2 -> Convert frames from thread1 to grayscale
-#grayscale_thread = threading.Thread(target=toGrayscale, args=[extractionQueue, displayingQueue])
-#grayscale_thread.setDaemon(True)
-#grayscale_thread.start()
-#THREAD3 -> Display frames from thread2
-display_thread = threading.Thread(target=displayFrames, args=[extractionQueue])
-display_thread.start()
+    # while inputFrame is not None:
+    # while not self.inputBuffer.empty():
+    while True:
+        print("Converting frame {}".format(count))
 
-reading_thread.join()
-#grayscale_thread.join()
-display_thread.join()
+        gets.acquire()
+        frameAsText = inputBuffer.get()
+        puts.release()
+
+        jpgRawImage = base64.b64decode(frameAsText)
+        # convert the raw frame to a numpy array
+        jpgImage = np.asarray(bytearray(jpgRawImage), dtype=np.uint8)
+
+        # get a jpg encoded frame
+        img = cv2.imdecode(jpgImage, cv2.IMREAD_UNCHANGED)
+        # jpg = cv2.imencode('.jpg', jpgImage)
+        # inputFrame = cv2.imread(jpg, cv2.IMREAD_COLOR)
+
+        # convert the image to grayscale
+        grayscaleFrame = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+        returnValue, jpgImg = cv2.imencode('.jpg', grayscaleFrame)
+
+        # generate output file name
+        # outFileName = "{}/grayscale_{:04d}.jpg".format(outputDir, count)
+
+        # encode the frame as base 64 to make debugging easier
+        jpgAsText = base64.b64encode(jpgImg)
+
+        # add the frame to the buffer
+        puts2.acquire()
+        outputBuffer.put(jpgAsText)
+        gets2.release()
+
+        # write output file
+        # cv2.imwrite(outFileName, grayscaleFrame)
+
+        count += 1
+        if count >= 738:
+            break
+        # generate input file name for the next frame
+        # inFileName = "{}/frame_{:04d}.jpg".format(outputDir, count)
+
+        # load the next frame
+        # inputFrame = cv2.imread(inFileName, cv2.IMREAD_COLOR)
 
 
-
-
-
-
+frameThread = threading.Thread(target=extractFrames, args=(filename, extractionQueue)).start()
+grayscaleThread = threading.Thread(target=grayScale, args=(extractionQueue, conversionQueue)).start()
+displayThread = threading.Thread(target=displayFrames, args=(conversionQueue,)).start()
 

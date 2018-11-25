@@ -4,13 +4,16 @@ import time, threading, cv2, queue
 
 
 class Process:
+
     inBuffer = queue.Queue(10)
     outBuffer = queue.Queue(10)
+
     semFill = threading.Semaphore(10)
     semTake = threading.Semaphore(0)
+
     semFillGray = threading.Semaphore(10)
     semTakeGray = threading.Semaphore(0)
-    semBlock = threading.Semaphore()
+
     fileName = 'clip.mp4'
     totalFrames = 0
     complete = False
@@ -47,16 +50,19 @@ class Process:
         while True:
             #-1 to take if negative wait. queue empty
             self.semTake.acquire()
-            #-1 to gray take semaphore if negative queue is full. wait
-            self.semFillGray.acquire()
             # take a frame from buffer
             img = self.inBuffer.get()
             # add 1 to semFill semaphore
             self.semFill.release()
             # change image to grayScale
             grayScaleFrame = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+            #-1 to gray take semaphore if negative queue is full. wait
+            self.semFillGray.acquire()
+            #add grayscaled frame to outBuffer
             self.outBuffer.put(grayScaleFrame)
+            # +1 to takeSem
             self.semTakeGray.release()
+            #print msg
             print("Grayscaling frame {}".format(gcount))
             gcount += 1
             if self.complete and self.totalFrames == gcount:
@@ -67,33 +73,39 @@ class Process:
 
     def display(self):
         dcount = 0
-
-        while frame is not None:
+        while not None:
+            print("about to display")
             self.semTakeGray.acquire()
-            jpgImg = self.outBuffer.get()
+            frame = self.outBuffer.get()
             self.semFillGray.release()
-            frame = cv2.imdecode(jpgImg, cv2.IMREAD_UNCHANGED)
-            cv2.imshow("Video", frame)
+
             frameInterval_s = 0.042
             nextFrameStart = time.time()
-            print("Displaying frame {}".format(dcount))
             # Display the frame in a window called "Video"
-            cv2.imshow("Video", frame)
+            print("Displaying frame {}".format(dcount))
             dcount += 1
             # delay beginning of next frame display
             delay_s = nextFrameStart - time.time()
             nextFrameStart += frameInterval_s
             delay_ms = int(max(1, 1000 * delay_s))
             print("delay + %d ms" % delay_s)
+
+            cv2.imshow('Video', frame)
+
             if cv2.waitKey(delay_ms) and 0xFF == ord("q"):
                 break
         print("finished displaying all frames!")
         cv2.destroyAllWindows()
 
+    def run(self):
+        extracting = threading.Thread(target=self.extract)
+        converting = threading.Thread(target=self.grayScale)
+        displaying = threading.Thread(target=self.display)
+        extracting.start()
+        converting.start()
+        displaying.start()
 
-extracting = threading.Thread(target=extract)
-converting = threading.Thread(target=grayScale)
-displaying = threading.Thread(target=display)
-extracting.start()
-converting.start()
-displaying.start()
+
+video_process = Process()
+video_process.run()
+
