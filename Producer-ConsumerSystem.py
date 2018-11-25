@@ -11,39 +11,36 @@ import cv2, queue, os
 # globals
 N = 10
 clipFileName = 'clip.mp4'
-extractionQueue = [10]
-displayingQueue = [10]
-lock = 0;
+extractionQueue = queue.Queue(10)
+displayingQueue = queue.Queue(10)
 
-eBuffFull = threading.Semaphore()
+eBuffFull = threading.Semaphore(10)
+eBuffEmpty = threading.Semaphore(0)
 
 
 def extractFrames(fileName,iBuffer):
     # Initialize frame count
     #extractionQueue
-    count = 1
+    count = 0
     # open video file
     vidcap = cv2.VideoCapture(fileName)
-
     # read first image
     #success, image = vidcap.read()
-
-    print("Reading frame {} {} ".format(count, success))
+    print("Reading frame {} {} ".format(count, True))
 
     while True:
-        if(iBuffer.isFull()):
-            eBuffFull.acquire()
-
-
+        eBuffFull.acquire()
         success, image = vidcap.read()
         success, jpgImage = cv2.imencode('.jpg', image)
         # encode the frame as base 64 to make debugging easier
         #jpgAsText = base64.b64encode(jpgImage)
         # add the frame to the buffer
         iBuffer.put(jpgImage)
+
         #success, image = vidcap.read()
         print('Reading frame {} {}'.format(count, success))
         count += 1
+        eBuffEmpty.release()
     print("done extracting!")
 
 
@@ -51,7 +48,10 @@ def extractFrames(fileName,iBuffer):
 def toGrayscale(iBuffer, oBuffer):
     while True:
         print("changing to grayscale")
+        eBuffEmpty.acquire()
         frameEncod = iBuffer.get()
+        eBuffFull.release()
+
         #print(frameEncod)
         #extract.release()
         #extract and decode
@@ -77,13 +77,13 @@ def displayFrames(oBuffer):
     count = 0
     frameDelay = 42  # the answer to everything
     # display.release()
-    frameAsText = oBuffer.get()
+    img = oBuffer.get()
     # decode the frame
     #jpgRawImage = base64.b64decode(frameAsText)
     # convert the raw frame to a numpy array
-    jpgImage = np.asarray(bytearray(jpgRawImage), dtype=np.uint8)
+    #jpgImage = np.asarray(bytearray(jpgRawImage), dtype=np.uint8)
     # get a jpg encoded frame
-    frame = cv2.imdecode(jpgImage, cv2.IMREAD_UNCHANGED)
+    frame = cv2.imdecode(img, cv2.IMREAD_UNCHANGED)
     cv2.imshow("Video", frame)
     while True:
         frameInterval_s = 0.042  # inter-frame interval, in seconds
